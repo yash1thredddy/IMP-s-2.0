@@ -9,7 +9,6 @@ from chembl_webresource_client.new_client import new_client
 import matplotlib.pyplot as plt
 import seaborn as sns
 from rdkit.Chem import Draw
-from PIL import Image
 from rdkit.Chem import Descriptors, Crippen
 import requests
 from functools import lru_cache
@@ -21,59 +20,13 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaFileUpload
-from google.oauth2 import service_account
 
-
-def authenticate_drive():
-    """Authenticate with Google Drive API using Streamlit secrets."""
-    credentials_dict = st.secrets["gdrive"]
-    credentials = service_account.Credentials.from_service_account_info(
-        credentials_dict
-    )
-    return build('drive', 'v3', credentials=credentials)
-
-def upload_to_drive(file_path, folder_id=None):
-    """Uploads a file to Google Drive."""
-    drive_service = authenticate_drive()
-    file_metadata = {
-        'name': os.path.basename(file_path),
-        'parents': [folder_id] if folder_id else None
-    }
-    media = MediaFileUpload(file_path, mimetype='application/octet-stream')
-    file = drive_service.files().create(
-        body=file_metadata,
-        media_body=media,
-        fields='id'
-    ).execute()
-    return file.get('id')
-
-def upload_results_to_drive(compound_name):
-    """Uploads processed results to Google Drive."""
-    compound_folder = os.path.join("analysis_results", compound_name.replace(' ', '_'))
-    results_file = os.path.join(compound_folder, f"{compound_name}_complete_results.csv")
-
-    if os.path.exists(results_file):
-        drive_file_id = upload_to_drive(results_file)
-        print(f"Uploaded {compound_name} results to Google Drive: {drive_file_id}")
-        return drive_file_id
-    else:
-        print(f"Results file for {compound_name} not found.")
-        return None
-    
-    
-    
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Add these lines to suppress chembl client logs
-chembl_logger = logging.getLogger('chembl_webresource_client')
-chembl_logger.setLevel(logging.WARNING)  # Only show warnings and errors
 
 # Directory Configuration
 RESULTS_DIR = "analysis_results"
@@ -524,6 +477,35 @@ def plot_all_visualizations(df_results, folder_name):
             plt.close(fig)
 
     print("Activity visualizations saved successfully.")
+        # Generate SEI and BEI box plots
+    unique_chembl_ids = df_results['ChEMBL ID'].unique()
+    
+    # Split ChEMBL IDs into groups of 5 for better visualization
+    chunk_size = 5
+    chembl_id_groups = [unique_chembl_ids[i:i + chunk_size] 
+                        for i in range(0, len(unique_chembl_ids), chunk_size)]
+    
+    # Generate SEI box plots
+    for i, group in enumerate(chembl_id_groups):
+        plot_property_with_structures(
+            df=df_results,
+            chembl_ids=group,
+            property_name='SEI',
+            title='Surface Efficiency Index',
+            group_index=i,
+            folder_name=sei_folder
+        )
+    
+    # Generate BEI box plots
+    for i, group in enumerate(chembl_id_groups):
+        plot_property_with_structures(
+            df=df_results,
+            chembl_ids=group,
+            property_name='BEI',
+            title='Binding Efficiency Index',
+            group_index=i,
+            folder_name=bei_folder
+        )
 
 def plot_property_with_structures(df, chembl_ids, property_name, title, group_index, folder_name):
     """Plot property distribution with molecular structures (clusters of 5)"""
@@ -568,23 +550,13 @@ def plot_property_with_structures(df, chembl_ids, property_name, title, group_in
     # Add molecular structures
     for i, (mol, name) in enumerate(zip(molecules, molecule_names)):
         if mol:
-            try:
-                # Convert RDKit molecule to PIL image
-                img = Draw.MolToImage(mol, size=(int(200 * image_scale), int(200 * image_scale)))
-                
-                # Convert PIL image to numpy array (for Matplotlib)
-                img_array = np.asarray(img)
-                
-                # Position the image in the Matplotlib figure
-                image_x = i / (len(chembl_ids) + 1)
-                ax_image = fig.add_axes([image_x, 0.8, 0.1, 0.1], zorder=1)
-                ax_image.imshow(img_array)
-                ax_image.axis('off')
-                ax_image.set_title(name, fontsize=8)
-            
-            except Exception as e:
-                print(f"Error rendering molecule {name}: {str(e)}")
-
+            img = Draw.MolToImage(mol, size=(int(200 * image_scale), int(200 * image_scale)))
+            img_array = np.array(img)
+            image_x = i / (len(chembl_ids) + 1)
+            ax_image = fig.add_axes([image_x, 0.8, 0.1, 0.1], zorder=1)
+            ax_image.imshow(img_array)
+            ax_image.axis('off')
+            ax_image.set_title(name, fontsize=8)
 
     plt.subplots_adjust(bottom=0.2, top=0.75, left=0.05, right=0.95)
     plt.savefig(f'{folder_name}/{property_name}_group{group_index + 1}_plot.png', 
@@ -609,6 +581,10 @@ def process_compound(
         Optional[pd.DataFrame]: Results dataframe or None if error
     """
     try:
+        # Update session state for tracking
+        st.session_state.processing_compound = compound_name
+        st.session_state.processing_progress = 0
+        
         # Validate inputs
         if not validate_compound_name(compound_name):
             raise ValueError("Invalid compound name")
@@ -620,7 +596,8 @@ def process_compound(
         # Create directory structure
         for folder in [compound_folder,
                       os.path.join(compound_folder, "SEI"),
-                      os.path.join(compound_folder, "BEI")]:
+                      os.path.join(compound_folder, "BEI"),
+                      os.path.join(compound_folder, "Activity")]:
             os.makedirs(folder, exist_ok=True)
         
         # Fetch ChEMBL IDs
@@ -629,6 +606,8 @@ def process_compound(
             
             if not chembl_ids:
                 st.warning("No similar compounds found")
+                # Reset processing state
+                st.session_state.processing_compound = None
                 return None
             
             # Save ChEMBL IDs
@@ -636,6 +615,9 @@ def process_compound(
             chembl_ids_filename = os.path.join(compound_folder,
                                              f"{compound_name}_chembl_ids.csv")
             chembl_ids_df.to_csv(chembl_ids_filename, index=False)
+            
+            # Update progress
+            st.session_state.processing_progress = 0.2
         
         # Process compounds with progress tracking
         all_results = []
@@ -645,7 +627,13 @@ def process_compound(
                 chembl_id = chembl_id_dict['ChEMBL ID']
                 results = fetch_and_calculate(chembl_id)
                 all_results.extend(results)
-                progress_bar.progress((idx + 1) / len(chembl_ids))
+                
+                # Update progress
+                progress = (idx + 1) / len(chembl_ids)
+                progress_bar.progress(progress)
+                
+                # Update session state progress (scale from 20% to 70%)
+                st.session_state.processing_progress = 0.2 + (progress * 0.5)
         
         # Create and save results DataFrame
         df_results = pd.DataFrame(all_results)
@@ -655,18 +643,37 @@ def process_compound(
                                       f"{compound_name}_complete_results.csv")
         df_results.to_csv(results_filename, index=False)
         
+        # Update progress
+        st.session_state.processing_progress = 0.8
+        
         # Generate visualizations
         with st.spinner("Generating visualizations..."):
             plot_all_visualizations(df_results, compound_folder)
+            
+            # Update progress to complete
+            st.session_state.processing_progress = 1.0
+        
+        # Set flags for notification
+        st.session_state.last_processed_compound = compound_name
+        st.session_state.show_new_compound_alert = True
         
         st.success(f"Processing completed for {compound_name}")
+        
+        # Reset processing state
+        st.session_state.processing_compound = None
+        st.session_state.processing_progress = 0
+        
         return df_results
     
     except Exception as e:
         logger.error(f"Error processing compound {compound_name}: {str(e)}")
         st.error(f"Error processing compound: {str(e)}")
+        
+        # Reset processing state on error
+        st.session_state.processing_compound = None
+        st.session_state.processing_progress = 0
+        
         return None
-
 
 def validate_csv_file(uploaded_file) -> bool:
     """

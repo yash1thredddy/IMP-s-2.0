@@ -17,7 +17,6 @@ import logging
 from typing import List, Optional, Dict
 import time
 
-
 # Add to app.py after imports
 RESULTS_DIR = "analysis_results"
 if not os.path.exists(RESULTS_DIR):
@@ -29,10 +28,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Add these lines to suppress chembl client logs
-chembl_logger = logging.getLogger('chembl_webresource_client')
-chembl_logger.setLevel(logging.WARNING)  # Only show warnings and errors
 
 # Initialize session state
 def init_session_state():
@@ -46,7 +41,11 @@ def init_session_state():
         "processing_progress": 0,
         "current_view": "main",
         "selected_plots": [],
-        "batch_processing": False
+        "batch_processing": False,
+        "processing_compound": None,
+        "compounds_to_process": [],
+        "last_processed_compound": None,
+        "show_new_compound_alert": False
     }
     
     for var, default in state_vars.items():
@@ -144,7 +143,40 @@ def zip_results() -> Optional[str]:
         logger.error(f"Error creating ZIP file: {str(e)}")
         st.error(f"Error creating download file: {str(e)}")
         return None
-
+    
+def zip_compound_results(compound_name: str) -> Optional[str]:
+    """
+    Create a zip file for a specific compound's results.
+    
+    Args:
+        compound_name: Name of the compound to zip
+    
+    Returns:
+        Optional[str]: Path to zip file or None if error
+    """
+    try:
+        zip_filename = f"{compound_name}_results.zip"
+        compound_folder = os.path.join(RESULTS_DIR, compound_name)
+        
+        if not os.path.exists(compound_folder):
+            st.warning(f"No results available for {compound_name}.")
+            return None
+        
+        with st.spinner(f"Creating ZIP file for {compound_name}..."):
+            with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+                for root, _, files in os.walk(compound_folder):
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        zipf.write(file_path, 
+                                os.path.relpath(file_path, RESULTS_DIR))
+            
+            return zip_filename if os.path.exists(zip_filename) else None
+    
+    except Exception as e:
+        logger.error(f"Error creating ZIP file for {compound_name}: {str(e)}")
+        st.error(f"Error creating download file: {str(e)}")
+        return None
+    
 def show_plots_with_navigation(folder_path: str, plot_type: str):
     """
     Display plots with navigation controls and error handling.
@@ -214,7 +246,7 @@ def show_sei_bei_boxplots(compound_folder: str):
         selected_property = st.radio("Select Property:", ["SEI", "BEI"])
         selected_folder = sei_folder if selected_property == "SEI" else bei_folder
         
-        box_plots = sorted(glob.glob(os.path.join(selected_folder, "*.png")))
+        box_plots = sorted(glob.glob(os.path.join(selected_folder, f"{selected_property}_group*_plot.png")))
         
         if not box_plots:
             st.warning(f"No box plots available for {selected_property}.")
@@ -248,7 +280,32 @@ def show_sei_bei_boxplots(compound_folder: str):
 def main():
     """Main application function."""
     try:
-        st.title("🔬 IMPULATER")
+        st.title("🔬 IMPULATOR")
+    # Global progress indicator (always visible)
+        if st.session_state.processing_compound:
+            progress_container = st.container()
+            with progress_container:
+                st.info(f"⏳ Processing {st.session_state.processing_compound} in background...")
+                st.progress(st.session_state.processing_progress)
+        
+        # Alert for newly processed compound
+        if st.session_state.show_new_compound_alert:
+            alert_container = st.container()
+            with alert_container:
+                new_compound = st.session_state.last_processed_compound
+                st.success(f"✅ New compound processed: {new_compound}")
+                col1, col2 = st.columns([1, 1])
+                with col1:
+                    if st.button("View Results Now"):
+                        compounds_list = get_available_compounds()
+                        if new_compound in compounds_list:
+                            st.session_state.selected_compound = new_compound
+                            st.session_state.show_new_compound_alert = False
+                            st.experimental_rerun()
+                with col2:
+                    if st.button("Dismiss"):
+                        st.session_state.show_new_compound_alert = False
+                        st.experimental_rerun()
         st.sidebar.header("Compound Processing")
         
         # Input method selection
@@ -333,21 +390,34 @@ def main():
             
             if df_results is not None and not df_results.empty:
                 st.dataframe(df_results)
-                csv_file = df_results.to_csv(index=False)
-                st.download_button(
-                    "📥 Download CSV", 
-                    csv_file, 
-                    file_name=f"{selected_compound}_results.csv", 
-                    mime="text/csv"
-                )
-            if st.button("📤 Upload to Google Drive"):
-                drive_id = upload_results_to_drive(selected_compound)
-                if drive_id:
-                    st.success(f"✅ Results uploaded to Google Drive: [View File](https://drive.google.com/file/d/{drive_id}/view)")
-                else:
-                    st.error("❌ Upload failed.")
+                
+                # Create two columns for download options
+                col1, col2 = st.columns(2)
+                
+                # CSV download option
+                with col1:
+                    csv_file = df_results.to_csv(index=False)
+                    st.download_button(
+                        "📥 Download CSV", 
+                        csv_file, 
+                        file_name=f"{selected_compound}_results.csv", 
+                        mime="text/csv"
+                    )
+                
+                # Zip download option for this compound
+                with col2:
+                    if st.button(f"📥 Download All {selected_compound} Files (ZIP)"):
+                        with st.spinner(f"Preparing {selected_compound} files..."):
+                            zip_file = zip_compound_results(selected_compound)
+                            if zip_file:
+                                with open(zip_file, "rb") as f:
+                                    st.download_button(
+                                        f"📥 Download {selected_compound} ZIP",
+                                        f,
+                                        file_name=zip_file,
+                                        mime="application/zip"
+                                    )
 
-            
             # Display plots
             st.subheader("Scatter Plots")
             show_plots_with_navigation(compound_folder, "scatter")
@@ -359,17 +429,18 @@ def main():
             show_sei_bei_boxplots(compound_folder)
             
             # Download all results
-            zip_file = zip_results()
-            if zip_file:
-                with open(zip_file, "rb") as f:
-                    st.sidebar.download_button(
-                        "📥 Download All Results (ZIP)",
-                        f,
-                        file_name=zip_file,
-                        mime="application/zip"
-                    )
-        else:
-            st.sidebar.info("No processed compounds available yet.")
+            st.sidebar.markdown("---")
+            if st.sidebar.button("📥 Prepare All Results (ZIP)"):
+                with st.sidebar.spinner("Creating ZIP of all results..."):
+                    zip_file = zip_results()
+                    if zip_file:
+                        with open(zip_file, "rb") as f:
+                            st.sidebar.download_button(
+                                "📥 Download All Results (ZIP)",
+                                f,
+                                file_name=zip_file,
+                                mime="application/zip"
+                            )
     
     except Exception as e:
         logger.error(f"Application error: {str(e)}")
