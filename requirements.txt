@@ -11,4 +11,4 @@ pillow
 functools
 typing
 logging
-concurrent.futures
+
