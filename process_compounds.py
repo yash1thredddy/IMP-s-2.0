@@ -20,7 +20,49 @@ import logging
 from concurrent.futures import ThreadPoolExecutor
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util.retry import Retry
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaFileUpload
+from google.oauth2 import service_account
 
+
+def authenticate_drive():
+    """Authenticate with Google Drive API using Streamlit secrets."""
+    credentials_dict = st.secrets["gdrive"]
+    credentials = service_account.Credentials.from_service_account_info(
+        credentials_dict
+    )
+    return build('drive', 'v3', credentials=credentials)
+
+def upload_to_drive(file_path, folder_id=None):
+    """Uploads a file to Google Drive."""
+    drive_service = authenticate_drive()
+    file_metadata = {
+        'name': os.path.basename(file_path),
+        'parents': [folder_id] if folder_id else None
+    }
+    media = MediaFileUpload(file_path, mimetype='application/octet-stream')
+    file = drive_service.files().create(
+        body=file_metadata,
+        media_body=media,
+        fields='id'
+    ).execute()
+    return file.get('id')
+
+def upload_results_to_drive(compound_name):
+    """Uploads processed results to Google Drive."""
+    compound_folder = os.path.join("analysis_results", compound_name.replace(' ', '_'))
+    results_file = os.path.join(compound_folder, f"{compound_name}_complete_results.csv")
+
+    if os.path.exists(results_file):
+        drive_file_id = upload_to_drive(results_file)
+        print(f"Uploaded {compound_name} results to Google Drive: {drive_file_id}")
+        return drive_file_id
+    else:
+        print(f"Results file for {compound_name} not found.")
+        return None
+    
+    
+    
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,

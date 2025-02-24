@@ -17,6 +17,7 @@ import logging
 from typing import List, Optional, Dict
 import time
 
+
 # Add to app.py after imports
 RESULTS_DIR = "analysis_results"
 if not os.path.exists(RESULTS_DIR):
@@ -339,6 +340,13 @@ def main():
                     file_name=f"{selected_compound}_results.csv", 
                     mime="text/csv"
                 )
+            if st.button("📤 Upload to Google Drive"):
+                drive_id = upload_results_to_drive(selected_compound)
+                if drive_id:
+                    st.success(f"✅ Results uploaded to Google Drive: [View File](https://drive.google.com/file/d/{drive_id}/view)")
+                else:
+                    st.error("❌ Upload failed.")
+
             
             # Display plots
             st.subheader("Scatter Plots")
