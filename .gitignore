@@ -1,0 +1,45 @@
+# Ignore virtual environments
+venv/
+.env/
+
+# Ignore compiled Python files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Ignore logs and temp files
+logs/
+*.log
+temp/
+debug.log
+
+# Ignore data files
+data/
+datasets/
+*.csv
+*.zip
+*.json
+*.xlsx
+*.parquet
+
+# Ignore output, experiment, and analysis results
+analysis_results/
+Examples/
+output/
+experiments/
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Ignore IDE-specific files
+.vscode/
+.idea/
+*.iml
+
+# Ignore Streamlit cache
+.streamlit/
+
+# Ignore dependency management files
+pip-log.txt
+pip-delete-this-directory.txt
