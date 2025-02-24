@@ -9,6 +9,7 @@ from chembl_webresource_client.new_client import new_client
 import matplotlib.pyplot as plt
 import seaborn as sns
 from rdkit.Chem import Draw
+from PIL import Image
 from rdkit.Chem import Descriptors, Crippen
 import requests
 from functools import lru_cache
@@ -567,13 +568,23 @@ def plot_property_with_structures(df, chembl_ids, property_name, title, group_in
     # Add molecular structures
     for i, (mol, name) in enumerate(zip(molecules, molecule_names)):
         if mol:
-            img = Draw.MolToImage(mol, size=(int(200 * image_scale), int(200 * image_scale)))
-            img_array = np.array(img)
-            image_x = i / (len(chembl_ids) + 1)
-            ax_image = fig.add_axes([image_x, 0.8, 0.1, 0.1], zorder=1)
-            ax_image.imshow(img_array)
-            ax_image.axis('off')
-            ax_image.set_title(name, fontsize=8)
+            try:
+                # Convert RDKit molecule to PIL image
+                img = Draw.MolToImage(mol, size=(int(200 * image_scale), int(200 * image_scale)))
+                
+                # Convert PIL image to numpy array (for Matplotlib)
+                img_array = np.asarray(img)
+                
+                # Position the image in the Matplotlib figure
+                image_x = i / (len(chembl_ids) + 1)
+                ax_image = fig.add_axes([image_x, 0.8, 0.1, 0.1], zorder=1)
+                ax_image.imshow(img_array)
+                ax_image.axis('off')
+                ax_image.set_title(name, fontsize=8)
+            
+            except Exception as e:
+                print(f"Error rendering molecule {name}: {str(e)}")
+
 
     plt.subplots_adjust(bottom=0.2, top=0.75, left=0.05, right=0.95)
     plt.savefig(f'{folder_name}/{property_name}_group{group_index + 1}_plot.png', 
