@@ -11,7 +11,8 @@ from process_compounds import (
     validate_csv_file,
     validate_compound_name,
     validate_smiles,
-    MAX_CSV_SIZE_MB
+    MAX_CSV_SIZE_MB,
+    ACTIVITY_TYPES
 )
 import logging
 from typing import List, Optional, Dict
@@ -45,7 +46,8 @@ def init_session_state():
         "processing_compound": None,
         "compounds_to_process": [],
         "last_processed_compound": None,
-        "show_new_compound_alert": False
+        "show_new_compound_alert": False,
+        "selected_activity_types": ACTIVITY_TYPES  # Default to all activity types
     }
     
     for var, default in state_vars.items():
@@ -281,7 +283,7 @@ def main():
     """Main application function."""
     try:
         st.title("🔬 IMPULATOR")
-    # Global progress indicator (always visible)
+        # Global progress indicator (always visible)
         if st.session_state.processing_compound:
             progress_container = st.container()
             with progress_container:
@@ -312,12 +314,31 @@ def main():
         input_method = st.sidebar.radio("Input Method", ["Manual", "CSV Upload"])
         similarity_threshold = st.sidebar.slider("Similarity Threshold", 0, 100, 80)
         
+        # Activity type selection
+        st.sidebar.subheader("Activity Types")
+        st.sidebar.info("Select which activity types to process. Choosing fewer types may speed up processing.")
+        selected_activity_types = st.sidebar.multiselect(
+            "Select Activity Types to Process",
+            options=ACTIVITY_TYPES,
+            default=st.session_state.selected_activity_types
+        )
+        
+        # Update session state with selected activity types
+        if selected_activity_types:
+            st.session_state.selected_activity_types = selected_activity_types
+        else:
+            st.sidebar.warning("⚠️ Please select at least one activity type")
+        
         # Manual input processing
         if input_method == "Manual":
             compound_name = st.sidebar.text_input("Compound Name")
             smiles = st.sidebar.text_area("SMILES String")
             
             if st.sidebar.button("Process Compound"):
+                if not selected_activity_types:
+                    st.error("Please select at least one activity type to process.")
+                    return
+                
                 if not compound_name or not smiles:
                     st.error("Please enter both compound name and SMILES.")
                     return
@@ -331,11 +352,14 @@ def main():
                     return
                 
                 with st.spinner("Processing compound... Please wait."):
-                    process_and_store(compound_name, smiles, similarity_threshold)
+                    process_and_store(
+                        compound_name=compound_name,
+                        smiles=smiles,
+                        similarity_threshold=similarity_threshold,
+                        activity_types=selected_activity_types
+                    )
         
-
         # CSV upload processing
-# In the CSV upload processing section:
         elif input_method == "CSV Upload":
             uploaded_file = st.sidebar.file_uploader("Upload CSV", type=['csv'])
             
@@ -357,13 +381,18 @@ def main():
                     st.sidebar.write("CSV Uploaded Successfully!")
                     
                     if st.sidebar.button("Process CSV"):
+                        if not selected_activity_types:
+                            st.error("Please select at least one activity type to process.")
+                            return
+                            
                         with st.spinner("Processing compounds... Please wait."):
                             progress_bar = st.progress(0)
                             for idx, row in df.iterrows():
                                 process_and_store(
                                     compound_name=row['compound_name'],
                                     smiles=row['smiles'],
-                                    similarity_threshold=similarity_threshold
+                                    similarity_threshold=similarity_threshold,
+                                    activity_types=selected_activity_types
                                 )
                                 progress_bar.progress((idx + 1) / len(df))
                             st.success("Processing completed for all compounds!")
@@ -371,7 +400,7 @@ def main():
                     st.error(f"Error reading CSV file: {str(e)}")
                     logger.error(f"Error reading CSV file: {str(e)}")
         
-        # Results display - FIXED VERSION
+        # Results display
         st.sidebar.header("Select Processed Compound")
         
         # Get available compounds

@@ -1,0 +1,40 @@
+Sun Mar  2 15:27:23 2025    benchmark_results\cprofile_batch_fetch_activities.prof
+
+         2564155 function calls (2557106 primitive calls) in 270.054 seconds
+
+   Ordered by: cumulative time
+   List reduced from 865 to 30 due to restriction <30>
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000  270.058  270.058 {built-in method builtins.exec}
+        1    0.000    0.000  270.058  270.058 <string>:1(<module>)
+        1    0.002    0.002  270.058  270.058 process_compounds.py:231(batch_fetch_activities)
+      321    0.008    0.000  269.559    0.840 url_query.py:379(get_page)
+      307    0.002    0.000  269.171    0.877 session.py:136(post)
+      307    0.004    0.000  269.169    0.877 session.py:148(request)
+      307    0.006    0.000  269.159    0.877 sessions.py:502(request)
+      307    0.008    0.000  268.627    0.875 session.py:184(send)
+      307    0.009    0.000  267.792    0.872 session.py:242(_send_and_cache)
+      307    0.007    0.000  267.028    0.870 sessions.py:673(send)
+      307    0.005    0.000  266.321    0.867 adapters.py:434(send)
+      307    0.005    0.000  266.064    0.867 connectionpool.py:598(urlopen)
+      307    0.006    0.000  266.005    0.866 connectionpool.py:380(_make_request)
+     6082    0.003    0.000  263.506    0.043 query_set.py:126(__next__)
+     6082    0.006    0.000  263.503    0.043 query_set.py:109(next)
+      307    0.010    0.000  263.496    0.858 url_query.py:429(next_page)
+      452    0.002    0.000  157.110    0.348 socket.py:692(readinto)
+      452    0.002    0.000  157.107    0.348 ssl.py:1300(recv_into)
+      452    0.002    0.000  157.105    0.348 ssl.py:1158(read)
+      452  157.103    0.348  157.103    0.348 {method 'read' of '_ssl._SSLSocket' objects}
+      307    0.008    0.000  156.644    0.510 connection.py:440(getresponse)
+      307    0.002    0.000  156.591    0.510 client.py:1334(getresponse)
+      307    0.005    0.000  156.581    0.510 client.py:311(begin)
+      307    0.006    0.000  156.479    0.510 client.py:278(_read_status)
+     3991    0.004    0.000  156.473    0.039 {method 'readline' of '_io.BufferedReader' objects}
+      307    0.002    0.000  109.255    0.356 connectionpool.py:1091(_validate_conn)
+      307    0.009    0.000  109.253    0.356 connection.py:614(connect)
+      307    0.007    0.000   75.507    0.246 connection.py:732(_ssl_wrap_socket_and_match_hostname)
+      307    0.003    0.000   75.353    0.245 ssl_.py:392(ssl_wrap_socket)
+      307    0.001    0.000   71.696    0.234 ssl_.py:493(_ssl_wrap_socket_impl)
+
+

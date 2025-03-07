@@ -1,0 +1,13 @@
+Sun Mar  2 15:22:10 2025    benchmark_results\cprofile_extract_properties.prof
+
+         4 function calls in 0.001 seconds
+
+   Ordered by: cumulative time
+
+   ncalls  tottime  percall  cumtime  percall filename:lineno(function)
+        1    0.000    0.000    0.001    0.001 {built-in method builtins.exec}
+        1    0.000    0.000    0.000    0.000 <string>:1(<module>)
+        1    0.000    0.000    0.000    0.000 process_compounds.py:199(extract_properties)
+        1    0.000    0.000    0.000    0.000 {method 'disable' of '_lsprof.Profiler' objects}
+
+

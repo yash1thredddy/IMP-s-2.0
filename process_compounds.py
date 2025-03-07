@@ -228,12 +228,13 @@ def calculate_efficiency_metrics(pActivity, psa, molecular_weight, npol, heavy_a
         return np.nan, np.nan, np.nan, np.nan
 
 # Block 4: Main Data Processing Function
-def batch_fetch_activities(chembl_ids: List[str], batch_size: int = 5, max_retries: int = 3) -> List[Dict]:
+def batch_fetch_activities(chembl_ids: List[str], activity_types: List[str] = ACTIVITY_TYPES, batch_size: int = 5, max_retries: int = 3) -> List[Dict]:
     """
     Fetch activities in batches with retry logic.
     
     Args:
         chembl_ids: List of ChEMBL IDs
+        activity_types: List of activity types to fetch
         batch_size: Size of each batch
         max_retries: Maximum number of retry attempts
     
@@ -256,7 +257,7 @@ def batch_fetch_activities(chembl_ids: List[str], batch_size: int = 5, max_retri
             
             while retry_count < max_retries:
                 try:
-                    for activity_type in ACTIVITY_TYPES:
+                    for activity_type in activity_types:
                         activities = activity.filter(
                             molecule_chembl_id__in=batch,
                             standard_type=activity_type
@@ -278,8 +279,8 @@ def batch_fetch_activities(chembl_ids: List[str], batch_size: int = 5, max_retri
     
     return all_activities
 
-def fetch_and_calculate(chembl_id):
-    """Fetch and calculate molecular properties with expanded activity types"""
+def fetch_and_calculate(chembl_id, activity_types=ACTIVITY_TYPES):
+    """Fetch and calculate molecular properties with user-selected activity types"""
     try:
         mol_data = get_molecule_data(chembl_id)
         if not mol_data:
@@ -315,9 +316,9 @@ def fetch_and_calculate(chembl_id):
         else:
             classification_data = extract_classification_data(None)
 
-        # Fetch all activity types
+        # Fetch user-selected activity types
         results = []
-        for activity_type in ACTIVITY_TYPES:
+        for activity_type in activity_types:
             bioactivities = list(activity.filter(
                 molecule_chembl_id=chembl_id,
                 standard_type=activity_type
@@ -567,7 +568,8 @@ def plot_property_with_structures(df, chembl_ids, property_name, title, group_in
 def process_compound(
     compound_name: str,
     smiles: str,
-    similarity_threshold: int = 80
+    similarity_threshold: int = 80,
+    activity_types: List[str] = ACTIVITY_TYPES
 ) -> Optional[pd.DataFrame]:
     """
     Process a single compound with improved error handling and progress tracking.
@@ -576,6 +578,7 @@ def process_compound(
         compound_name: Name of the compound
         smiles: SMILES string
         similarity_threshold: Similarity threshold for search
+        activity_types: List of activity types to process
     
     Returns:
         Optional[pd.DataFrame]: Results dataframe or None if error
@@ -590,6 +593,8 @@ def process_compound(
             raise ValueError("Invalid compound name")
         if not validate_smiles(smiles):
             raise ValueError("Invalid SMILES string")
+        if not activity_types:
+            raise ValueError("No activity types selected")
         
         compound_folder = os.path.join(RESULTS_DIR, compound_name.replace(' ', '_'))
         
@@ -621,11 +626,12 @@ def process_compound(
         
         # Process compounds with progress tracking
         all_results = []
-        with st.spinner("Processing compounds..."):
+        with st.spinner(f"Processing compounds with activity types: {', '.join(activity_types)}..."):
+            st.info(f"Selected activity types: {', '.join(activity_types)}")
             progress_bar = st.progress(0)
             for idx, chembl_id_dict in enumerate(chembl_ids):
                 chembl_id = chembl_id_dict['ChEMBL ID']
-                results = fetch_and_calculate(chembl_id)
+                results = fetch_and_calculate(chembl_id, activity_types)
                 all_results.extend(results)
                 
                 # Update progress
@@ -735,7 +741,7 @@ def validate_csv_file(uploaded_file) -> bool:
     
 # Function to check if a compound already exists and handle user choice
 # Function to check if a compound already exists and handle user choice
-def check_existing_compound(compound_name, smiles, similarity_threshold):
+def check_existing_compound(compound_name, smiles, similarity_threshold, activity_types=ACTIVITY_TYPES):
     """Check if the compound already exists and prompt the user for action."""
     compound_folder = os.path.join(RESULTS_DIR, compound_name.replace(' ', '_'))
 
@@ -787,7 +793,7 @@ def check_existing_compound(compound_name, smiles, similarity_threshold):
                 new_compound_name = st.session_state.new_compound_name
                 if new_compound_name:
                     st.success(f"✔ Processing with new name: **'{new_compound_name}'**")
-                    process_compound(new_compound_name, smiles, similarity_threshold)
+                    process_compound(new_compound_name, smiles, similarity_threshold, activity_types)
                     st.experimental_rerun()  
                     return new_compound_name  
                 else:
@@ -796,19 +802,20 @@ def check_existing_compound(compound_name, smiles, similarity_threshold):
             elif st.session_state.compound_action == "❌ Replace existing compound":
                 shutil.rmtree(compound_folder)  
                 st.success(f"✅ Replacing compound **'{compound_name}'** with new parameters.")
-                process_compound(compound_name, smiles, similarity_threshold)
+                process_compound(compound_name, smiles, similarity_threshold, activity_types)
                 st.experimental_rerun()  
                 return compound_name  
 
         return None  
 
-    return compound_name  
+    return compound_name 
 
 
 def process_and_store(
     compound_name: str,
     smiles: str,
-    similarity_threshold: int = 80
+    similarity_threshold: int = 80,
+    activity_types: List[str] = ACTIVITY_TYPES
 ) -> bool:
     """
     Process a compound and store results with improved validation.
@@ -817,6 +824,7 @@ def process_and_store(
         compound_name: Name of the compound
         smiles: SMILES string
         similarity_threshold: Similarity threshold for search
+        activity_types: List of activity types to process
     
     Returns:
         bool: True if processing successful, False otherwise
@@ -831,14 +839,23 @@ def process_and_store(
             st.error("Invalid SMILES string. Please check the input format.")
             return False
         
+        if not activity_types:
+            st.error("No activity types selected. Please select at least one activity type.")
+            return False
+        
         # Check for existing compound
-        validated_compound_name = check_existing_compound(compound_name, smiles, similarity_threshold)
+        validated_compound_name = check_existing_compound(compound_name, smiles, similarity_threshold, activity_types)
         if validated_compound_name is None:
             return False
         
         # Process compound with progress tracking
         with st.spinner(f"Processing compound {validated_compound_name}..."):
-            results = process_compound(validated_compound_name, smiles, similarity_threshold)
+            results = process_compound(
+                validated_compound_name, 
+                smiles, 
+                similarity_threshold, 
+                activity_types
+            )
             
             if results is not None:
                 st.success(f"Successfully processed {validated_compound_name}")
